@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+
+import { Command } from 'commander';
+import { init } from './design-system/commands/init.js';
+import { add } from './design-system/commands/add.js';
+
+const program = new Command();
+
+program
+  .version('1.0.0')
+  .description('A simple CLI tool to interact with the Bits of Good Design System')
+  .addCommand(init)
+  .addCommand(add);
+
+program.parse(process.argv);
