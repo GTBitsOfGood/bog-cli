@@ -28,4 +28,4 @@ export const BASE_URL =
   "https://raw.githubusercontent.com/GTBitsOfGood/design-system";
 
 // Configuration constants
-export const CONFIG_FILE_NAME = "bog_cli.json";
+export const CONFIG_FILE_NAME = "bog.json";

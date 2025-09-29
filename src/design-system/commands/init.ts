@@ -5,7 +5,13 @@ import prompts from "prompts";
 import { execSync } from "child_process";
 import path from "path";
 import ora from "ora";
-import { logInfo, logError, logWarning } from "../../utils.js";
+import {
+  logInfo,
+  logError,
+  logWarning,
+  logColored,
+  COLORS,
+} from "../../utils.js";
 import { createBogConfig } from "../../config-utils.js";
 import { CONFIG_FILE_NAME } from "../../config.js";
 import {
@@ -17,6 +23,14 @@ import {
 
 // installs dependencies
 async function installDependencies(root: string): Promise<boolean> {
+  // Show what dependencies will be installed
+  logInfo("\nDependencies to be installed:");
+  logInfo("Development dependencies:");
+  DEV_DEPENDENCIES.forEach((dep) => logColored(`  - ${dep}`, "BLUE"));
+  logInfo("Runtime dependencies:");
+  DEPENDENCIES.forEach((dep) => logColored(`  - ${dep}`, "BLUE"));
+  logInfo("");
+
   const { installDeps } = await prompts({
     name: "installDeps",
     type: "confirm",
@@ -216,7 +230,9 @@ async function handleNextJsIntegration(
     }
   } else {
     // not next.js app router project, so the user has to manually import the stylesheet
-    logInfo("non-next.js app router project detected.");
+    logWarning(
+      "Not in next.js app router project, user will have to manually import the stylesheet."
+    );
     logWarning(
       "Make sure to import your css file into your code so the theme is applied correctly.\n" +
         "Follow the instructions on the tailwind documentation: `https://tailwindcss.com/docs/installation/using-postcss`"
@@ -272,6 +288,18 @@ async function setupFonts(root: string): Promise<boolean> {
 }
 
 /**
+ * Displays a diff-style list of created files
+ */
+function displayDiff(files: string[]): void {
+  if (files.length === 0) return;
+
+  logInfo("\nFiles created:");
+  files.forEach((file) => {
+    logColored(`+ ${file}`, "GREEN");
+  });
+}
+
+/**
  * Displays a summary of all setup actions performed
  */
 function displaySetupSummary(
@@ -279,37 +307,56 @@ function displaySetupSummary(
   tailwindSetup: boolean,
   stylesSetup: boolean,
   fontsSetup: boolean,
-  configCreated: boolean
+  createdFiles: string[] = []
 ): void {
-  logInfo("\n" + "=".repeat(50));
-  logInfo("SETUP SUMMARY");
-  logInfo("=".repeat(50));
+  logInfo("\n" + "─".repeat(50));
+  logColored("SETUP SUMMARY", "CYAN");
+  logInfo("─".repeat(50));
 
-  logInfo(
-    `Dependencies: ${
-      dependenciesInstalled ? "✓ Installed" : "✗ Skipped/Failed"
-    }`
+  // Align the status text
+  const statusWidth = 12;
+  const status = (enabled: boolean) => (enabled ? "Enabled" : "Not Enabled");
+  const statusColor = (enabled: boolean) => (enabled ? "GREEN" : "YELLOW");
+
+  logColored(
+    `Dependencies:${" ".repeat(statusWidth - 11)}${status(
+      dependenciesInstalled
+    )}`,
+    statusColor(dependenciesInstalled)
   );
-  logInfo(`Tailwind v4: ${tailwindSetup ? "✓ Configured" : "✗ Skipped"}`);
-  logInfo(`Theme CSS: ${stylesSetup ? "✓ Downloaded" : "✗ Skipped"}`);
-  logInfo(`Fonts: ${fontsSetup ? "✓ Downloaded" : "✗ Skipped"}`);
-  logInfo(`Config file: ${configCreated ? "✓ Created" : "✗ Not created"}`);
+  logColored(
+    `Tailwind v4:${" ".repeat(statusWidth - 10)}${status(tailwindSetup)}`,
+    statusColor(tailwindSetup)
+  );
+  logColored(
+    `Theme CSS:${" ".repeat(statusWidth - 9)}${status(stylesSetup)}`,
+    statusColor(stylesSetup)
+  );
+  logColored(
+    `Fonts:${" ".repeat(statusWidth - 5)}${status(fontsSetup)}`,
+    statusColor(fontsSetup)
+  );
 
-  const completedSteps = [
+  const allSteps = [
     dependenciesInstalled,
     tailwindSetup,
     stylesSetup,
     fontsSetup,
-    configCreated,
-  ].filter(Boolean).length;
+  ];
 
-  if (completedSteps === 5) {
-    logInfo("Bits of Good design system init complete!");
+  const completedSteps = allSteps.filter(Boolean).length;
+  const totalSteps = allSteps.length;
+
+  if (completedSteps === totalSteps) {
+    logColored("\nBits of Good design system init complete!", "GREEN");
   } else {
-    logInfo(
-      "Setup completed with some steps skipped. Check the warnings above for manual setup instructions."
+    logWarning(
+      "\nSetup completed with some steps skipped. Check the warnings above for manual setup instructions."
     );
   }
+
+  // Show diff of created files
+  displayDiff(createdFiles);
 }
 
 export const init = new Command()
@@ -317,14 +364,30 @@ export const init = new Command()
   .description("Initialize a new project")
   .action(async () => {
     try {
-      const { root } = await prompts([
-        {
+      // Auto-detect project root or ask user
+      let root: string;
+
+      // Check if bog.json exists in current directory (already initialized)
+      if (existsSync("./bog.json")) {
+        logInfo("Detected existing bog.json in current directory.");
+        root = "./";
+      } else {
+        // Ask user for project root
+        const { root: userRoot } = await prompts({
           type: "text",
           name: "root",
           message: "Where is the root of your project?",
           initial: "./",
-        },
-      ]);
+        });
+
+        // Handle SIGINT (Ctrl+C) during prompt
+        if (!userRoot) {
+          logInfo("\nOperation cancelled.");
+          return;
+        }
+
+        root = userRoot;
+      }
 
       if (!existsSync(root)) {
         logError("The root directory does not exist.");
@@ -343,18 +406,33 @@ export const init = new Command()
       // Setup fonts
       const fontsSetup = await setupFonts(root);
 
-      // Create bog_cli.json config file
-      const configCreated = createBogConfig(root);
-      if (configCreated) {
-        logInfo(`Created ${CONFIG_FILE_NAME} configuration file`);
+      // Track created files
+      const createdFiles: string[] = [];
+
+      // Create bog.json config file
+      const configPath = path.join(root, CONFIG_FILE_NAME);
+      if (existsSync(configPath)) {
+        logInfo(`${CONFIG_FILE_NAME} already exists, skipping creation...`);
       } else {
-        // Check if it already exists or failed to create
-        const configPath = path.join(root, CONFIG_FILE_NAME);
-        if (existsSync(configPath)) {
-          logInfo(`${CONFIG_FILE_NAME} configuration file already exists`);
+        const configCreated = createBogConfig(root);
+        if (configCreated) {
+          logInfo(`Created ${CONFIG_FILE_NAME} configuration file`);
+          createdFiles.push(CONFIG_FILE_NAME);
         } else {
           logWarning(`Failed to create ${CONFIG_FILE_NAME} configuration file`);
         }
+      }
+
+      // Add other created files based on setup
+      if (tailwindSetup) {
+        createdFiles.push("postcss.config.mjs");
+      }
+      if (stylesSetup) {
+        // We don't know the exact path, but we can mention it
+        createdFiles.push("src/styles/globals.css");
+      }
+      if (fontsSetup) {
+        createdFiles.push("public/fonts/");
       }
 
       // Display summary
@@ -363,10 +441,10 @@ export const init = new Command()
         tailwindSetup,
         stylesSetup,
         fontsSetup,
-        configCreated
+        createdFiles
       );
     } catch (e: any) {
-      logError("Bits of Good design system init failed.");
+      logError("Bits of Good design system init failed:");
       logError(e);
     }
   });

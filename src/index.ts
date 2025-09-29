@@ -7,7 +7,7 @@ const program = new Command();
 program
   .version("1.0.0")
   .description(
-    "The CLI to add different Bits of Goods tools to your application."
+    "The CLI to add different Bits of Good tools to your application."
   )
   .addCommand(designSystem);
 

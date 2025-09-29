@@ -2,6 +2,9 @@
 const COLORS = {
   RED: "\x1b[31m",
   YELLOW: "\x1b[33m",
+  GREEN: "\x1b[32m",
+  BLUE: "\x1b[34m",
+  CYAN: "\x1b[36m",
   RESET: "\x1b[0m",
 } as const;
 
@@ -25,3 +28,18 @@ export const logError = (message: string): void => {
 export const logWarning = (message: string): void => {
   console.warn(`${COLORS.YELLOW}WARNING:${COLORS.RESET} ${message}`);
 };
+
+/**
+ * Logs a colored message to the console
+ */
+export const logColored = (
+  message: string,
+  color: keyof typeof COLORS
+): void => {
+  console.log(`${COLORS[color]}${message}${COLORS.RESET}`);
+};
+
+/**
+ * Exports colors for use in other modules
+ */
+export { COLORS };

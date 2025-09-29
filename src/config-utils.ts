@@ -5,7 +5,7 @@ import { BASE_URL, CONFIG_FILE_NAME } from "./config.js";
 import { logError, logInfo } from "./utils.js";
 
 /**
- * Reads the bog_cli.json config file from the project root
+ * Reads the bog.json config file from the project root
  */
 export function readBogConfig(root: string): BogConfig | null {
   const configPath = path.join(root, CONFIG_FILE_NAME);
@@ -24,7 +24,7 @@ export function readBogConfig(root: string): BogConfig | null {
 }
 
 /**
- * Writes the bog_cli.json config file to the project root
+ * Writes the bog.json config file to the project root
  */
 export function writeBogConfig(root: string, config: BogConfig): boolean {
   const configPath = path.join(root, CONFIG_FILE_NAME);
@@ -39,7 +39,7 @@ export function writeBogConfig(root: string, config: BogConfig): boolean {
 }
 
 /**
- * Creates a new bog_cli.json config file with default values
+ * Creates a new bog.json config file with default values
  * Returns true if created successfully, false if already exists or creation failed
  */
 export function createBogConfig(
@@ -84,14 +84,22 @@ export async function getDesignSystemVersion(): Promise<string> {
 }
 
 /**
- * Validates that bog_cli.json exists in the project root
+ * Checks if bog.json exists in the project root (without logging errors)
+ */
+export function bogConfigExists(root: string): boolean {
+  const configPath = path.join(root, CONFIG_FILE_NAME);
+  return existsSync(configPath);
+}
+
+/**
+ * Validates that bog.json exists in the project root
  */
 export function validateBogConfigExists(root: string): boolean {
   const configPath = path.join(root, CONFIG_FILE_NAME);
 
   if (!existsSync(configPath)) {
     logError(
-      `${CONFIG_FILE_NAME} not found in project root. Please run 'bog-cli design-system init' first.`
+      `${CONFIG_FILE_NAME} not found in project root. Please run 'bog design init' first.`
     );
     return false;
   }
