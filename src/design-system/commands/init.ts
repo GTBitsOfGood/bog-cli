@@ -1,91 +1,84 @@
-import { Command } from 'commander';
-import { existsSync, readFileSync } from 'fs';
-import { mkdir, writeFile } from 'fs/promises';
-import prompts from 'prompts';
-import { execSync } from 'child_process';
-import path from 'path';
-import ora from 'ora';
+import { Command } from "commander";
+import { existsSync, readFileSync } from "fs";
+import { mkdir, writeFile } from "fs/promises";
+import prompts from "prompts";
+import { execSync } from "child_process";
+import path from "path";
+import ora from "ora";
+import { BASE_URL, logInfo, logError, logWarning } from "../../utils.js";
 
-const DEV_DEPENDENCIES = ['tailwindcss', '@tailwindcss/postcss'];
-const DEPENDENCIES = [
-  '@radix-ui/react-checkbox',
-  '@radix-ui/react-icons',
-  '@radix-ui/themes',
-  '@phosphor-icons/react',
-  'radix-ui',
-];
-const FONTS = [
-  'visbyextrabold-webfont.woff2',
-  'visbyextrabold-webfont.woff',
-  'opensans-regular-webfont.woff2',
-  'opensans-regular-webfont.woff',
-];
+import { DEV_DEPENDENCIES, DEPENDENCIES, FONTS } from "../../config.js";
 
-export const init = new Command()
-  .command('init')
-  .description('Initialize a new project')
-  .action(async () => {
+// installs dependencies
+async function installDependencies(root: string): Promise<boolean> {
+  const { installDeps } = await prompts({
+    name: "installDeps",
+    type: "confirm",
+    message: "Do you want to install dependencies via a package manager?",
+    initial: true,
+  });
+
+  if (!installDeps) {
+    logWarning(
+      "Skipping dependencies. You will not be able to use the design system without additional setup."
+    );
+    return false;
+  }
+
+  const { packageManager } = await prompts({
+    type: "select",
+    name: "packageManager",
+    message: "Which package manager do you want to use?",
+    choices: [
+      // the value is the command to run to install a package
+      { title: "npm", value: "npm install" },
+      { title: "yarn", value: "yarn add" },
+      { title: "pnpm", value: "pnpm add" },
+      { title: "bun", value: "bun add" },
+    ],
+  });
+
+  if (packageManager) {
+    const spinner = ora("Installing dependencies...").start();
+
     try {
-      const { root } = await prompts([
-        {
-          type: 'text',
-          name: 'root',
-          message: 'Where is the root of your project?',
-          initial: './',
-        },
-      ]);
-      if (!existsSync(root)) {
-        console.error('ERROR: The root directory does not exist.');
-        return;
-      }
+      execSync(
+        `cd ${root} && ${packageManager} -D ${DEV_DEPENDENCIES.join(" ")}`
+      );
+      spinner.text = "installing dependencies...";
+      execSync(`cd ${root} && ${packageManager} ${DEPENDENCIES.join(" ")}`);
+      spinner.succeed("dependencies installed!");
+      return true;
+    } catch (error: any) {
+      spinner.fail("Failed to install dependencies");
+      logError(`Package manager command failed: ${error.message}`);
+      logWarning(
+        "Skipping dependency installation. You may need to install dependencies manually later."
+      );
+      return false;
+    }
+  } else {
+    logWarning(
+      "Package manager selection was cancelled. Dependencies not installed."
+    );
+    return false;
+  }
+}
 
-      const { installDeps } = await prompts({
-        name: 'installDeps',
-        type: 'confirm',
-        message: 'Do you want to install dependencies?',
-        initial: true,
-      });
-      if (!installDeps) {
-        console.error(
-          'ERROR: Skipping dependencies. You will not be able to use the design system without additional setup.'
-        );
-      } else {
-        const { packageManager } = await prompts({
-          type: 'select',
-          name: 'packageManager',
-          message: 'Which package manager do you want to use?',
-          choices: [
-            // the value is the command to run to install a package
-            { title: 'npm', value: 'npm install' },
-            { title: 'yarn', value: 'yarn add' },
-            { title: 'pnpm', value: 'pnpm add' },
-            { title: 'bun', value: 'bun add' },
-          ],
-        });
+//Tailwind setup
+async function setupTailwind(root: string): Promise<boolean> {
+  const { setupTailwind } = await prompts({
+    name: "setupTailwind",
+    type: "confirm",
+    message: "Do you want to set up Tailwind v4 for Next.js?",
+    initial: true,
+  });
 
-        if (packageManager) {
-          const spinner = ora('Installing dependencies...').start();
-          execSync(`cd ${root} && ${packageManager} -D ${DEV_DEPENDENCIES.join(' ')}`);
-          spinner.text = 'installing dependencies...';
-          execSync(`cd ${root} && ${packageManager} ${DEPENDENCIES.join(' ')}`);
-          spinner.succeed('dependencies installed!');
-        } else {
-          console.error('ERROR: Package manager selection was cancelled. Dependencies not installed.');
-        }
-      }
-
-      const { setupTailwind } = await prompts({
-        name: 'setupTailwind',
-        type: 'confirm',
-        message: 'Do you want to set up Tailwind v4 for Next.js?',
-        initial: true,
-      });
-
-      if (setupTailwind) {
-        const spinner = ora('setting up Tailwind v4 for Next.js...').start();
-        await writeFile(
-          path.join(root, 'postcss.config.mjs'),
-          `
+  if (setupTailwind) {
+    const spinner = ora("setting up Tailwind v4 for Next.js...").start();
+    await writeFile(
+      path.join(root, "postcss.config.mjs"),
+      `
 /** @type {import('postcss-load-config').Config} */
 const config = {
   plugins: {
@@ -95,137 +88,263 @@ const config = {
 
 export default config;
 `.trim(),
-          'utf8'
-        );
-        spinner.succeed('Tailwind v4 setup complete!');
-      }
+      "utf8"
+    );
+    spinner.succeed("Tailwind v4 setup complete!");
+  }
 
-      const { setupStyles } = await prompts({
-        name: 'setupStyles',
-        type: 'confirm',
-        message: 'Do you want to set up the Bits of Good Sunset theme?',
+  return setupTailwind;
+}
+
+//Setup Bits of Good sunset theme global css
+async function setupStyles(
+  root: string,
+  tailwindSetup: boolean
+): Promise<boolean> {
+  const { setupStyles } = await prompts({
+    name: "setupStyles",
+    type: "confirm",
+    message:
+      "Do you want to download the Bits of Good Sunset theme global css?",
+    initial: true,
+  });
+
+  if (!setupStyles) {
+    logWarning(
+      "Skipping the Bits of Good theme global css setup. Your project may not look like the Design System Website."
+    );
+    if (!tailwindSetup) {
+      logWarning(
+        'You will need to finish the Tailwind setup manually. Create a css file with `@import "tailwindcss"` in it, and make sure you import it into your src/app/layout.tsx or src/pages/_app.tsx.'
+      );
+    }
+    return false;
+  }
+
+  const { stylePath } = await prompts({
+    name: "stylePath",
+    type: "text",
+    message:
+      "Input the path relative to your project's root directory where the global stylesheet should be copied (e.g ./src/styles/globals.css)",
+    initial: "src/styles/globals.css",
+  });
+
+  const response = await fetch(
+    `${BASE_URL}/refs/heads/main/src/styles/globals.css`
+  );
+  const styles = await response.text();
+
+  await mkdir(path.dirname(path.join(root, stylePath)), {
+    recursive: true,
+  });
+
+  if (existsSync(path.join(root, stylePath))) {
+    const { overwrite } = await prompts({
+      name: "overwrite",
+      type: "confirm",
+      message: `The file ${stylePath} already exists. Do you want to overwrite it?`,
+      initial: true,
+    });
+
+    if (!overwrite) {
+      // we failed to install the stylesheet which is an unrecoverable error
+      logWarning(
+        "Skipping downloading the sunset theme as not allowed to overwrite the previous download."
+      );
+      return false;
+    }
+  }
+
+  await writeFile(path.join(root, stylePath), styles, "utf8");
+  logInfo("Bits of Good theme and tailwindcss stylesheet created.");
+  logInfo(
+    "Make sure to import it into your src/app/layout.tsx or src/pages/_app.tsx"
+  );
+
+  // Handle adding css into project.
+  await handleNextJsIntegration(root, stylePath);
+  return true;
+}
+
+/**
+ * Handles Next.js App Router integration for stylesheets
+ */
+async function handleNextJsIntegration(
+  root: string,
+  stylePath: string
+): Promise<void> {
+  // if we're in a next.js app router project
+  if (existsSync(path.join(root, "src", "app", "layout.tsx"))) {
+    const contents = readFileSync(
+      path.join(root, "src", "app", "layout.tsx"),
+      "utf8"
+    );
+    const relativePath = path.relative(
+      path.join(root, "src", "app"),
+      path.join(root, stylePath)
+    );
+
+    // (somewhat naive) check if the stylesheet is already imported into the layout file
+    if (contents.includes(relativePath)) {
+      logInfo(
+        "It seems like the stylesheet you chose is already imported into your layout file correctly. Tailwind setup complete!"
+      );
+    } else {
+      const { updateLayout } = await prompts({
+        name: "updateLayout",
+        type: "confirm",
+        message: `It seems like the stylesheet you chose is not already imported into your layout file. Would you like to update it?`,
         initial: true,
       });
 
-      if (!setupStyles) {
-        console.error(
-          'ERROR: Skipping the Bits of Good theme setup. Your project may not look like the Design System Website.'
-        );
-        if (!setupTailwind) {
-          console.error(
-            'ERROR: You will need to finish the Tailwind setup manually. Create a css file with `@import "tailwindcss"` in it, and make sure you import it into your src/app/layout.tsx or src/pages/_app.tsx.'
-          );
-        }
-      } else {
-        const { stylePath } = await prompts({
-          name: 'stylePath',
-          type: 'text',
-          message:
-            "Input the path relative to your project's root directory where the global stylesheet should be copied (e.g ./src/styles/globals.css)",
-          initial: 'src/styles/globals.css',
-        });
-
-        const response = await fetch(
-          'https://raw.githubusercontent.com/GTBitsOfGood/design-system/refs/heads/main/src/styles/globals.css'
-        );
-        const styles = await response.text();
-
-        await mkdir(path.dirname(path.join(root, stylePath)), { recursive: true });
-        if (existsSync(path.join(root, stylePath))) {
-          const { overwrite } = await prompts({
-            name: 'overwrite',
-            type: 'confirm',
-            message: `The file ${stylePath} already exists. Do you want to overwrite it?`,
-            initial: true,
-          });
-
-          if (!overwrite) {
-            // we failed to install the stylesheet which is an unrecoverable error
-            console.error('BoG setup failed.');
-            return;
-          }
-        }
-
-        await writeFile(path.join(root, stylePath), styles, 'utf8');
-        console.log('Bits of Good theme and tailwindcss stylesheet created.');
-        console.log('Make sure to import it into your src/app/layout.tsx or src/pages/_app.tsx');
-
-        // if we're in a next.js app router project
-        if (existsSync(path.join(root, 'src', 'app', 'layout.tsx'))) {
-          const contents = readFileSync(path.join(root, 'src', 'app', 'layout.tsx'), 'utf8');
-          const relativePath = path.relative(path.join(root, 'src', 'app'), path.join(root, stylePath));
-
-          // (somewhat naive) check if the stylesheet is already imported into the layout file
-          if (contents.includes(relativePath)) {
-            console.log(
-              'It seems like the stylesheet you chose is already imported into your layout file correctly. Tailwind setup complete!'
-            );
-          } else {
-            const { updateLayout } = await prompts({
-              name: 'updateLayout',
-              type: 'confirm',
-              message: `It seems like the stylesheet you chose is not already imported into your layout file. Would you like to update it?`,
-              initial: true,
-            });
-
-            if (!updateLayout) {
-              console.log(
-                'VERY IMPORTANT: make sure to import your css file into your layout file so the theme is applied correctly. Follow the instructions on the tailwind documentation: `https://tailwindcss.com/docs/installation/using-postcss`'
-              );
-            } else {
-              // add the stylesheet import to the top of the layout file
-              writeFile(path.join(root, 'src', 'app', 'layout.tsx'), `import "${relativePath}";\n${contents}`, 'utf8');
-            }
-          }
-        } else {
-          // not next.js app router project, so the user has to manually import the stylesheet
-          console.log('non-next.js app router project detected.');
-          console.log(
-            // make "VERY IMPORTANT" red using ANSI escape codes
-            '\x1b[31mVERY IMPORTANT\x1b[0m: make sure to import your css file into your code so the theme is applied correctly.\n' +
-              'Follow the instructions on the tailwind documentation: `https://tailwindcss.com/docs/installation/using-postcss`'
-          );
-        }
-      }
-
-      const { setupFonts } = await prompts({
-        name: 'setupFonts',
-        type: 'confirm',
-        message: 'Do you want to set up the Bits of Good fonts?',
-        initial: true,
-      });
-
-      if (!setupFonts) {
-        console.error(
-          'ERROR: Skipping the Bits of Good fonts setup. Your project may not look like the Design System Website.'
+      if (!updateLayout) {
+        logWarning(
+          "Make sure to import your css file into your layout file so the theme is applied correctly. Follow the instructions on the tailwind documentation: `https://tailwindcss.com/docs/installation/using-postcss`"
         );
       } else {
-        const { fontPath } = await prompts({
-          name: 'fontPath',
-          type: 'text',
-          message: 'Input your public directory for your project relative to the root directory.',
-          initial: './public/',
-        });
-        await mkdir(path.join(root, fontPath, 'fonts'), { recursive: true });
-
-        await Promise.all(
-          FONTS.map(async (font) => {
-            const response = await fetch(
-              `https://raw.githubusercontent.com/GTBitsOfGood/design-system/main/public/fonts/${font}`
-            );
-            if (!response.ok) {
-              throw new Error(`ERROR: Failed to download font: ${font}, status: ${response.status}`);
-            }
-            const fontData = await response.arrayBuffer();
-            await writeFile(path.join(root, fontPath, 'fonts', font), Buffer.from(fontData), 'binary');
-          })
+        // add the stylesheet import to the top of the layout file
+        writeFile(
+          path.join(root, "src", "app", "layout.tsx"),
+          `import "${relativePath}";\n${contents}`,
+          "utf8"
         );
-        console.log('Bits of Good fonts downloaded successfully.');
+      }
+    }
+  } else {
+    // not next.js app router project, so the user has to manually import the stylesheet
+    logInfo("non-next.js app router project detected.");
+    logWarning(
+      "Make sure to import your css file into your code so the theme is applied correctly.\n" +
+        "Follow the instructions on the tailwind documentation: `https://tailwindcss.com/docs/installation/using-postcss`"
+    );
+  }
+}
+
+//Setting up fonts
+async function setupFonts(root: string): Promise<boolean> {
+  const { setupFonts } = await prompts({
+    name: "setupFonts",
+    type: "confirm",
+    message: "Do you want to set up the Bits of Good fonts?",
+    initial: true,
+  });
+
+  if (!setupFonts) {
+    logWarning(
+      "Skipping the Bits of Good fonts setup. Your project may not look like the Design System Website."
+    );
+    return false;
+  }
+
+  const { fontPath } = await prompts({
+    name: "fontPath",
+    type: "text",
+    message:
+      "Input your public directory relative to your project's root directory.",
+    initial: "./public/",
+  });
+
+  await mkdir(path.join(root, fontPath, "fonts"), { recursive: true });
+
+  await Promise.all(
+    FONTS.map(async (font) => {
+      const response = await fetch(`${BASE_URL}/main/public/fonts/${font}`);
+      if (!response.ok) {
+        throw new Error(
+          `ERROR: Failed to download font: ${font}, status: ${response.status}`
+        );
+      }
+      const fontData = await response.arrayBuffer();
+      await writeFile(
+        path.join(root, fontPath, "fonts", font),
+        Buffer.from(fontData),
+        "binary"
+      );
+    })
+  );
+
+  logInfo(`Bits of Good fonts downloaded successfully.\n Fonts: ${FONTS}`);
+  return true;
+}
+
+/**
+ * Displays a summary of all setup actions performed
+ */
+function displaySetupSummary(
+  dependenciesInstalled: boolean,
+  tailwindSetup: boolean,
+  stylesSetup: boolean,
+  fontsSetup: boolean
+): void {
+  logInfo("\n" + "=".repeat(50));
+  logInfo("SETUP SUMMARY");
+  logInfo("=".repeat(50));
+
+  logInfo(
+    `Dependencies: ${
+      dependenciesInstalled ? "✓ Installed" : "✗ Skipped/Failed"
+    }`
+  );
+  logInfo(`Tailwind v4: ${tailwindSetup ? "✓ Configured" : "✗ Skipped"}`);
+  logInfo(`Theme CSS: ${stylesSetup ? "✓ Downloaded" : "✗ Skipped"}`);
+  logInfo(`Fonts: ${fontsSetup ? "✓ Downloaded" : "✗ Skipped"}`);
+
+  const completedSteps = [
+    dependenciesInstalled,
+    tailwindSetup,
+    stylesSetup,
+    fontsSetup,
+  ].filter(Boolean).length;
+
+  if (completedSteps === 4) {
+    logInfo("Bits of Good design system init complete!");
+  } else {
+    logInfo(
+      "Setup completed with some steps skipped. Check the warnings above for manual setup instructions."
+    );
+  }
+}
+
+export const init = new Command()
+  .command("init")
+  .description("Initialize a new project")
+  .action(async () => {
+    try {
+      const { root } = await prompts([
+        {
+          type: "text",
+          name: "root",
+          message: "Where is the root of your project?",
+          initial: "./",
+        },
+      ]);
+
+      if (!existsSync(root)) {
+        logError("The root directory does not exist.");
+        return;
       }
 
-      console.log('Bits of Good design system init complete.');
+      // Install dependencies
+      const dependenciesInstalled = await installDependencies(root);
+
+      // Setup Tailwind v4
+      const tailwindSetup = await setupTailwind(root);
+
+      // Setup theme stylesheet
+      const stylesSetup = await setupStyles(root, tailwindSetup);
+
+      // Setup fonts
+      const fontsSetup = await setupFonts(root);
+
+      // Display summary
+      displaySetupSummary(
+        dependenciesInstalled,
+        tailwindSetup,
+        stylesSetup,
+        fontsSetup
+      );
     } catch (e: any) {
-      console.error('ERROR: Bits of Good design system init failed.');
-      console.error(e);
+      logError("Bits of Good design system init failed.");
+      logError(e);
     }
   });
