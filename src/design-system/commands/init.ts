@@ -5,9 +5,15 @@ import prompts from "prompts";
 import { execSync } from "child_process";
 import path from "path";
 import ora from "ora";
-import { BASE_URL, logInfo, logError, logWarning } from "../../utils.js";
-
-import { DEV_DEPENDENCIES, DEPENDENCIES, FONTS } from "../../config.js";
+import { logInfo, logError, logWarning } from "../../utils.js";
+import { createBogConfig } from "../../config-utils.js";
+import { CONFIG_FILE_NAME } from "../../config.js";
+import {
+  DEV_DEPENDENCIES,
+  DEPENDENCIES,
+  FONTS,
+  BASE_URL,
+} from "../../config.js";
 
 // installs dependencies
 async function installDependencies(root: string): Promise<boolean> {
@@ -166,9 +172,7 @@ async function setupStyles(
   return true;
 }
 
-/**
- * Handles Next.js App Router integration for stylesheets
- */
+//Integrate style sheets.
 async function handleNextJsIntegration(
   root: string,
   stylePath: string
@@ -247,7 +251,7 @@ async function setupFonts(root: string): Promise<boolean> {
   await mkdir(path.join(root, fontPath, "fonts"), { recursive: true });
 
   await Promise.all(
-    FONTS.map(async (font) => {
+    FONTS.map(async (font: string) => {
       const response = await fetch(`${BASE_URL}/main/public/fonts/${font}`);
       if (!response.ok) {
         throw new Error(
@@ -274,7 +278,8 @@ function displaySetupSummary(
   dependenciesInstalled: boolean,
   tailwindSetup: boolean,
   stylesSetup: boolean,
-  fontsSetup: boolean
+  fontsSetup: boolean,
+  configCreated: boolean
 ): void {
   logInfo("\n" + "=".repeat(50));
   logInfo("SETUP SUMMARY");
@@ -288,15 +293,17 @@ function displaySetupSummary(
   logInfo(`Tailwind v4: ${tailwindSetup ? "✓ Configured" : "✗ Skipped"}`);
   logInfo(`Theme CSS: ${stylesSetup ? "✓ Downloaded" : "✗ Skipped"}`);
   logInfo(`Fonts: ${fontsSetup ? "✓ Downloaded" : "✗ Skipped"}`);
+  logInfo(`Config file: ${configCreated ? "✓ Created" : "✗ Not created"}`);
 
   const completedSteps = [
     dependenciesInstalled,
     tailwindSetup,
     stylesSetup,
     fontsSetup,
+    configCreated,
   ].filter(Boolean).length;
 
-  if (completedSteps === 4) {
+  if (completedSteps === 5) {
     logInfo("Bits of Good design system init complete!");
   } else {
     logInfo(
@@ -336,12 +343,27 @@ export const init = new Command()
       // Setup fonts
       const fontsSetup = await setupFonts(root);
 
+      // Create bog_cli.json config file
+      const configCreated = createBogConfig(root);
+      if (configCreated) {
+        logInfo(`Created ${CONFIG_FILE_NAME} configuration file`);
+      } else {
+        // Check if it already exists or failed to create
+        const configPath = path.join(root, CONFIG_FILE_NAME);
+        if (existsSync(configPath)) {
+          logInfo(`${CONFIG_FILE_NAME} configuration file already exists`);
+        } else {
+          logWarning(`Failed to create ${CONFIG_FILE_NAME} configuration file`);
+        }
+      }
+
       // Display summary
       displaySetupSummary(
         dependenciesInstalled,
         tailwindSetup,
         stylesSetup,
-        fontsSetup
+        fontsSetup,
+        configCreated
       );
     } catch (e: any) {
       logError("Bits of Good design system init failed.");

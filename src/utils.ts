@@ -1,6 +1,3 @@
-export const BASE_URL =
-  "https://raw.githubusercontent.com/GTBitsOfGood/design-system";
-
 // ANSI color codes
 const COLORS = {
   RED: "\x1b[31m",
