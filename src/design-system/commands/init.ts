@@ -11,6 +11,7 @@ import {
   logWarning,
   logColored,
   COLORS,
+  findGitRoot,
 } from "../../utils.js";
 import { createBogConfig } from "../../config-utils.js";
 import { CONFIG_FILE_NAME } from "../../config.js";
@@ -314,49 +315,31 @@ function displaySetupSummary(
   logInfo("─".repeat(50));
 
   // Align the status text
-  const statusWidth = 12;
+  const labelWidth = 18; // Fixed width for labels to align statuses
   const status = (enabled: boolean) => (enabled ? "Enabled" : "Not Enabled");
   const statusColor = (enabled: boolean) => (enabled ? "GREEN" : "YELLOW");
 
+  const formatRow = (label: string, enabled: boolean) => {
+    const padding = " ".repeat(labelWidth - label.length);
+    return `${label}${padding}${status(enabled)}`;
+  };
+
   logColored(
-    `Dependencies:${" ".repeat(statusWidth - 11)}${status(
-      dependenciesInstalled
-    )}`,
+    formatRow("Dependencies:", dependenciesInstalled),
     statusColor(dependenciesInstalled)
   );
   logColored(
-    `Tailwind v4:${" ".repeat(statusWidth - 10)}${status(tailwindSetup)}`,
+    formatRow("Tailwind v4:", tailwindSetup),
     statusColor(tailwindSetup)
   );
-  logColored(
-    `Theme CSS:${" ".repeat(statusWidth - 9)}${status(stylesSetup)}`,
-    statusColor(stylesSetup)
-  );
-  logColored(
-    `Fonts:${" ".repeat(statusWidth - 5)}${status(fontsSetup)}`,
-    statusColor(fontsSetup)
-  );
-
-  const allSteps = [
-    dependenciesInstalled,
-    tailwindSetup,
-    stylesSetup,
-    fontsSetup,
-  ];
-
-  const completedSteps = allSteps.filter(Boolean).length;
-  const totalSteps = allSteps.length;
-
-  if (completedSteps === totalSteps) {
-    logColored("\nBits of Good design system init complete!", "GREEN");
-  } else {
-    logWarning(
-      "\nSetup completed with some steps skipped. Check the warnings above for manual setup instructions."
-    );
-  }
+  logColored(formatRow("Theme CSS:", stylesSetup), statusColor(stylesSetup));
+  logColored(formatRow("Fonts:", fontsSetup), statusColor(fontsSetup));
 
   // Show diff of created files
   displayDiff(createdFiles);
+
+  // Final completion message
+  logColored("\nBits of Good design system init complete!", "GREEN");
 }
 
 export const init = new Command()
@@ -372,21 +355,68 @@ export const init = new Command()
         logInfo("Detected existing bog.json in current directory.");
         root = "./";
       } else {
-        // Ask user for project root
-        const { root: userRoot } = await prompts({
-          type: "text",
-          name: "root",
-          message: "Where is the root of your project?",
-          initial: "./",
-        });
+        // Try to find git root
+        const gitRoot = findGitRoot();
 
-        // Handle SIGINT (Ctrl+C) during prompt
-        if (!userRoot) {
-          logInfo("\nOperation cancelled.");
-          return;
+        if (gitRoot) {
+          // Found git repository, use it as the default
+          logInfo(`Detected git repository root: ${gitRoot}`);
+
+          if (existsSync(path.join(gitRoot, "bog.json"))) {
+            logInfo("Detected existing bog.json in git repository root.");
+            root = gitRoot;
+          } else {
+            // Ask user if they want to use git root
+            const { useGitRoot } = await prompts({
+              type: "confirm",
+              name: "useGitRoot",
+              message: `Initialize design system in git repository root (${gitRoot})?`,
+              initial: true,
+            });
+
+            if (useGitRoot === undefined) {
+              // Handle SIGINT (Ctrl+C) during prompt
+              logInfo("\nOperation cancelled.");
+              return;
+            }
+
+            if (useGitRoot) {
+              root = gitRoot;
+            } else {
+              // Ask for custom root
+              const { root: userRoot } = await prompts({
+                type: "text",
+                name: "root",
+                message: "Where is the root of your project?",
+                initial: "./",
+              });
+
+              if (!userRoot) {
+                logInfo("\nOperation cancelled.");
+                return;
+              }
+              root = userRoot;
+            }
+          }
+        } else {
+          // Not in a git repository, ask user for project root
+          logWarning("Not in a git repository. Please specify project root.");
+
+          const { root: userRoot } = await prompts({
+            type: "text",
+            name: "root",
+            message: "Where is the root of your project?",
+            initial: "./",
+          });
+
+          // Handle SIGINT (Ctrl+C) during prompt
+          if (!userRoot) {
+            logInfo("\nOperation cancelled.");
+            return;
+          }
+
+          root = userRoot;
         }
-
-        root = userRoot;
       }
 
       if (!existsSync(root)) {

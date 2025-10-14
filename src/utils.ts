@@ -1,3 +1,5 @@
+import { execSync } from "child_process";
+
 // ANSI color codes
 const COLORS = {
   RED: "\x1b[31m",
@@ -43,3 +45,23 @@ export const logColored = (
  * Exports colors for use in other modules
  */
 export { COLORS };
+
+/**
+ * Finds the root of the git repository using git command
+ * @param startPath - The path to start searching from (defaults to current working directory)
+ * @returns The path to the git root directory, or null if not in a git repository
+ */
+export function findGitRoot(startPath: string = process.cwd()): string | null {
+  try {
+    const gitRoot = execSync("git rev-parse --show-toplevel", {
+      cwd: startPath,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+
+    return gitRoot;
+  } catch {
+    // Not in a git repository or git is not installed
+    return null;
+  }
+}

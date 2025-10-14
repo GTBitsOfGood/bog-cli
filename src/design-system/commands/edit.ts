@@ -8,6 +8,7 @@ import {
   logWarning,
   logColored,
   COLORS,
+  findGitRoot,
 } from "../../utils.js";
 import {
   readBogConfig,
@@ -46,29 +47,42 @@ export const edit = new Command()
       // Auto-detect project root or ask user
       let root: string;
 
-      // Check if bog.json exists in current directory
+      // First, check if bog.json exists in current directory
       if (bogConfigExists("./")) {
         root = "./";
-        logInfo("Detected project root: current directory");
+        logInfo("Detected bog.json in current directory");
       } else {
-        // Ask user for project root
-        const { root: userRoot } = await prompts({
-          type: "text",
-          name: "root",
-          message: "Where is the root of your project?",
-          initial: "./",
-        });
+        // Try to find git root and check if bog.json exists there
+        const gitRoot = findGitRoot();
+        if (gitRoot && bogConfigExists(gitRoot)) {
+          root = gitRoot;
+          logInfo(`Detected bog.json in git repository root: ${gitRoot}`);
+        } else {
+          // Ask user for project root
+          if (gitRoot) {
+            logWarning(
+              "Found git repository but no bog.json file. Please specify project root."
+            );
+          }
 
-        // Handle (Ctrl+C) during prompt
-        if (!userRoot) {
-          logInfo("\nOperation cancelled.");
-          return;
-        }
+          const { root: userRoot } = await prompts({
+            type: "text",
+            name: "root",
+            message: "Where is the root of your project?",
+            initial: gitRoot || "./",
+          });
 
-        if (!validateBogConfigExists(userRoot)) {
-          return;
+          // Handle (Ctrl+C) during prompt
+          if (!userRoot) {
+            logInfo("\nOperation cancelled.");
+            return;
+          }
+
+          if (!validateBogConfigExists(userRoot)) {
+            return;
+          }
+          root = userRoot;
         }
-        root = userRoot;
       }
 
       // Read existing config
@@ -92,133 +106,28 @@ export const edit = new Command()
         existingComponents.forEach((component) => {
           const version =
             config["design-system"].components[component]?.version;
-          logInfo(`  - ${component} (v${version})`);
+          const isOutdated = version !== currentVersion;
+          logInfo(
+            `  - ${component} (v${version})${
+              isOutdated ? ` → update available (v${currentVersion})` : ""
+            }`
+          );
         });
         logInfo("");
       }
 
-      // Determine available actions
-      const availableComponents = COMPONENTS.filter(
-        (comp: string) => !existingComponents.includes(comp)
-      );
-      const componentsToUpdate = existingComponents.filter((comp: string) => {
+      // Check for outdated components first
+      const outdatedComponents = existingComponents.filter((comp: string) => {
         const installedVersion =
           config["design-system"].components[comp]?.version;
         return installedVersion !== currentVersion;
       });
 
-      // Show what actions are possible
-      const availableActions = [];
-      if (availableComponents.length > 0) {
-        availableActions.push(
-          `Add ${availableComponents.length} new component(s)`
-        );
-      }
-      if (componentsToUpdate.length > 0) {
-        availableActions.push(
-          `Update ${componentsToUpdate.length} existing component(s)`
-        );
-      }
-      if (existingComponents.length > 0) {
-        availableActions.push(`Remove existing component(s)`);
-      }
-
-      if (availableActions.length === 0) {
-        logInfo("All components are already installed and up to date!");
-        return;
-      }
-
-      logInfo("Available actions:");
-      availableActions.forEach((action, index) => {
-        logInfo(`  ${index + 1}. ${action}`);
-      });
-      logInfo("");
-
-      // Ask user what they they want to do
-      const { action } = await prompts({
-        type: "select",
-        name: "action",
-        message: "What would you like to do?",
-        choices: [
-          ...(availableComponents.length > 0
-            ? [
-                {
-                  title: `Add new components (${availableComponents.length} available)`,
-                  value: "add",
-                },
-              ]
-            : []),
-          ...(componentsToUpdate.length > 0
-            ? [
-                {
-                  title: `Update existing components (${componentsToUpdate.length} outdated)`,
-                  value: "update",
-                },
-              ]
-            : []),
-          ...(existingComponents.length > 0
-            ? [
-                {
-                  title: `Remove existing components (${existingComponents.length} installed)`,
-                  value: "remove",
-                },
-              ]
-            : []),
-          { title: "Cancel", value: "cancel" },
-        ],
-      });
-
-      if (action === "cancel") {
-        logInfo("Operation cancelled.");
-        return;
-      }
-
-      const installPath = config["design-system"].path;
-
-      if (action === "add") {
-        // Add new components
-        const { selectedComponents } = await prompts({
-          type: "multiselect",
-          name: "selectedComponents",
-          message: "Select new components to add:",
-          choices: availableComponents.map((comp: string) => ({
-            title: `${comp} (new)`,
-            value: comp,
-            disabled: false,
-          })),
-          validate: (components) =>
-            components.length > 0
-              ? true
-              : "Please select at least one component",
-        });
-
-        if (!selectedComponents || selectedComponents.length === 0) {
-          logInfo("No components selected for addition.");
-          return;
-        }
-
-        await addComponents(
-          selectedComponents,
-          installPath,
-          config,
-          currentVersion
-        );
-
-        // Show diff of added files
-        const addedFiles = selectedComponents.map(
-          (comp: string) =>
-            `src/components/Bog${comp
-              .split("-")
-              .map(
-                (part: string) => part.charAt(0).toUpperCase() + part.slice(1)
-              )
-              .join("")}/`
-        );
-        displayDiff(addedFiles, "added");
-      } else if (action === "update") {
-        // Update existing components
-        logInfo("Components with available updates:");
-        componentsToUpdate.forEach((component: string) => {
+      // Step 1: Handle updates if there are outdated components
+      let componentsToUpdate: string[] = [];
+      if (outdatedComponents.length > 0) {
+        logInfo("Outdated components detected:");
+        outdatedComponents.forEach((component: string) => {
           const installedVersion =
             config["design-system"].components[component]?.version;
           logInfo(
@@ -227,97 +136,199 @@ export const edit = new Command()
         });
         logInfo("");
 
-        const { selectedUpdates } = await prompts({
-          type: "multiselect",
-          name: "selectedUpdates",
-          message: "Select components to update:",
-          choices: componentsToUpdate.map((comp: string) => ({
-            title: `${comp} (update v${config["design-system"].components[comp]?.version} → v${currentVersion})`,
-            value: comp,
-            disabled: false,
-          })),
-          validate: (components) =>
-            components.length > 0
-              ? true
-              : "Please select at least one component to update",
+        const { wantToUpdate } = await prompts({
+          type: "confirm",
+          name: "wantToUpdate",
+          message: `Update ${outdatedComponents.length} outdated component(s)?`,
+          initial: true,
         });
 
-        if (!selectedUpdates || selectedUpdates.length === 0) {
-          logInfo("No components selected for update.");
+        if (wantToUpdate === undefined) {
+          logInfo("\nOperation cancelled.");
           return;
         }
 
+        if (wantToUpdate) {
+          const { selectedUpdates } = await prompts({
+            type: "multiselect",
+            name: "selectedUpdates",
+            message:
+              "Select components to update (or skip to keep current versions):",
+            choices: outdatedComponents.map((comp: string) => {
+              const installedVersion =
+                config["design-system"].components[comp]?.version;
+              return {
+                title: `${comp}: v${installedVersion} → v${currentVersion}`,
+                value: comp,
+                selected: true, // Pre-select all outdated components for update
+              };
+            }),
+            hint: "- Space to select/unselect. Return to submit",
+          });
+
+          if (selectedUpdates === undefined) {
+            logInfo("\nOperation cancelled.");
+            return;
+          }
+
+          componentsToUpdate = selectedUpdates || [];
+        }
+      }
+
+      // Step 2: Handle add/remove with unified multiselect
+      const componentChoices = COMPONENTS.map((comp: string) => {
+        const isInstalled = existingComponents.includes(comp);
+        const installedVersion = isInstalled
+          ? config["design-system"].components[comp]?.version
+          : null;
+
+        let title = comp;
+        if (isInstalled) {
+          title += ` (installed v${installedVersion})`;
+        } else {
+          title += ` (new)`;
+        }
+
+        return {
+          title,
+          value: comp,
+          selected: isInstalled, // Pre-select installed components
+        };
+      });
+
+      const { selectedComponents } = await prompts({
+        type: "multiselect",
+        name: "selectedComponents",
+        message:
+          "Select components (installed components are pre-selected, unselect to remove):",
+        choices: componentChoices,
+        hint: "- Space to select/unselect. Return to submit",
+      });
+
+      // Handle cancellation
+      if (!selectedComponents) {
+        logInfo("\nOperation cancelled.");
+        return;
+      }
+
+      const installPath = config["design-system"].path;
+      // Resolve the install path relative to the root directory
+      const absoluteInstallPath = path.join(root, installPath);
+
+      // Determine what changed
+      const componentsToAdd = selectedComponents.filter(
+        (comp: string) => !existingComponents.includes(comp)
+      );
+      const componentsToRemove = existingComponents.filter(
+        (comp: string) => !selectedComponents.includes(comp)
+      );
+
+      // Show summary of changes
+      if (
+        componentsToAdd.length === 0 &&
+        componentsToRemove.length === 0 &&
+        componentsToUpdate.length === 0
+      ) {
+        logInfo("No changes to make. All components are up to date!");
+        return;
+      }
+
+      logInfo("\nChanges to be made:");
+      if (componentsToAdd.length > 0) {
+        logInfo(`  Add: ${componentsToAdd.join(", ")}`);
+      }
+      if (componentsToUpdate.length > 0) {
+        logInfo(`  Update: ${componentsToUpdate.join(", ")}`);
+      }
+      if (componentsToRemove.length > 0) {
+        logInfo(`  Remove: ${componentsToRemove.join(", ")}`);
+      }
+      logInfo("");
+
+      // Confirm changes
+      const { confirmChanges } = await prompts({
+        type: "confirm",
+        name: "confirmChanges",
+        message: "Proceed with these changes?",
+        initial: true,
+      });
+
+      if (!confirmChanges) {
+        logInfo("Changes cancelled.");
+        return;
+      }
+
+      // Execute changes
+      const addedFiles: string[] = [];
+      const updatedFiles: string[] = [];
+      const removedFiles: string[] = [];
+
+      // Add new components
+      if (componentsToAdd.length > 0) {
         await addComponents(
-          selectedUpdates,
-          installPath,
+          componentsToAdd,
+          absoluteInstallPath,
           config,
           currentVersion
         );
-
-        // Show diff of updated files
-        const updatedFiles = selectedUpdates.map(
-          (comp: string) =>
-            `src/components/Bog${comp
-              .split("-")
-              .map(
-                (part: string) => part.charAt(0).toUpperCase() + part.slice(1)
-              )
-              .join("")}/`
+        addedFiles.push(
+          ...componentsToAdd.map(
+            (comp: string) =>
+              `${installPath}/Bog${comp
+                .split("-")
+                .map(
+                  (part: string) => part.charAt(0).toUpperCase() + part.slice(1)
+                )
+                .join("")}/`
+          )
         );
-        displayDiff(updatedFiles, "modified");
-      } else if (action === "remove") {
-        // Remove components
-        const { selectedComponents } = await prompts({
-          type: "multiselect",
-          name: "selectedComponents",
-          message: "Select components to remove:",
-          choices: existingComponents.map((comp) => ({
-            title: `${comp} (v${config["design-system"].components[comp]?.version})`,
-            value: comp,
-            disabled: false,
-          })),
-          validate: (components) =>
-            components.length > 0
-              ? true
-              : "Please select at least one component to remove",
-        });
-
-        if (!selectedComponents || selectedComponents.length === 0) {
-          logInfo("No components selected for removal.");
-          return;
-        }
-
-        // Confirm removal
-        const { confirm } = await prompts({
-          type: "confirm",
-          name: "confirm",
-          message: `Are you sure you want to remove ${selectedComponents.length} component(s)?`,
-          initial: false,
-        });
-
-        if (!confirm) {
-          logInfo("Removal cancelled.");
-          return;
-        }
-
-        await removeComponents(selectedComponents, installPath, config);
-
-        // Show diff of removed files
-        const removedFiles = selectedComponents.map(
-          (comp: string) =>
-            `src/components/Bog${comp
-              .split("-")
-              .map(
-                (part: string) => part.charAt(0).toUpperCase() + part.slice(1)
-              )
-              .join("")}/`
-        );
-        displayDiff(removedFiles, "removed");
       }
+
+      // Update existing components
+      if (componentsToUpdate.length > 0) {
+        await addComponents(
+          componentsToUpdate,
+          absoluteInstallPath,
+          config,
+          currentVersion
+        );
+        updatedFiles.push(
+          ...componentsToUpdate.map(
+            (comp: string) =>
+              `${installPath}/Bog${comp
+                .split("-")
+                .map(
+                  (part: string) => part.charAt(0).toUpperCase() + part.slice(1)
+                )
+                .join("")}/`
+          )
+        );
+      }
+
+      // Remove components
+      if (componentsToRemove.length > 0) {
+        await removeComponents(componentsToRemove, absoluteInstallPath, config);
+        removedFiles.push(
+          ...componentsToRemove.map(
+            (comp: string) =>
+              `${installPath}/Bog${comp
+                .split("-")
+                .map(
+                  (part: string) => part.charAt(0).toUpperCase() + part.slice(1)
+                )
+                .join("")}/`
+          )
+        );
+      }
+
+      // Show diffs
+      displayDiff(addedFiles, "added");
+      displayDiff(updatedFiles, "modified");
+      displayDiff(removedFiles, "removed");
 
       // Write updated config
       if (writeBogConfig(root, config)) {
-        logColored(`\nSuccessfully completed ${action} operation!`, "GREEN");
+        logColored("\nSuccessfully completed component changes!", "GREEN");
       } else {
         logError(`Failed to update ${CONFIG_FILE_NAME} configuration`);
       }
