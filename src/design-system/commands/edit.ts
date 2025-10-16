@@ -172,6 +172,20 @@ export const edit = new Command()
           }
 
           componentsToUpdate = selectedUpdates || [];
+
+          // Show summary of components to be updated
+          if (componentsToUpdate.length > 0) {
+            logInfo("\nComponents to be updated:");
+            componentsToUpdate.forEach((component: string) => {
+              const installedVersion =
+                config["design-system"].components[component]?.version;
+              logColored(
+                `  - ${component}: v${installedVersion} → v${currentVersion}`,
+                "YELLOW"
+              );
+            });
+            logInfo("");
+          }
         }
       }
 

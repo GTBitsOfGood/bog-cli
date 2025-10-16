@@ -32,24 +32,10 @@ async function installDependencies(root: string): Promise<boolean> {
   DEPENDENCIES.forEach((dep) => logColored(`  - ${dep}`, "BLUE"));
   logInfo("");
 
-  const { installDeps } = await prompts({
-    name: "installDeps",
-    type: "confirm",
-    message: "Do you want to install dependencies via a package manager?",
-    initial: true,
-  });
-
-  if (!installDeps) {
-    logWarning(
-      "Skipping dependencies. You will not be able to use the design system without additional setup."
-    );
-    return false;
-  }
-
   const { packageManager } = await prompts({
     type: "select",
     name: "packageManager",
-    message: "Which package manager do you want to use?",
+    message: "Choose your preferred package manager",
     choices: [
       // the value is the command to run to install a package
       { title: "npm", value: "npm install" },
@@ -59,28 +45,28 @@ async function installDependencies(root: string): Promise<boolean> {
     ],
   });
 
-  if (packageManager) {
-    const spinner = ora("Installing dependencies...").start();
-
-    try {
-      execSync(
-        `cd ${root} && ${packageManager} -D ${DEV_DEPENDENCIES.join(" ")}`
-      );
-      spinner.text = "installing dependencies...";
-      execSync(`cd ${root} && ${packageManager} ${DEPENDENCIES.join(" ")}`);
-      spinner.succeed("dependencies installed!");
-      return true;
-    } catch (error: any) {
-      spinner.fail("Failed to install dependencies");
-      logError(`Package manager command failed: ${error.message}`);
-      logWarning(
-        "Skipping dependency installation. You may need to install dependencies manually later."
-      );
-      return false;
-    }
-  } else {
+  if (!packageManager) {
     logWarning(
       "Package manager selection was cancelled. Dependencies not installed."
+    );
+    return false;
+  }
+
+  const spinner = ora("Installing dependencies...").start();
+
+  try {
+    execSync(
+      `cd ${root} && ${packageManager} -D ${DEV_DEPENDENCIES.join(" ")}`
+    );
+    spinner.text = "installing dependencies...";
+    execSync(`cd ${root} && ${packageManager} ${DEPENDENCIES.join(" ")}`);
+    spinner.succeed("dependencies installed!");
+    return true;
+  } catch (error: any) {
+    spinner.fail("Failed to install dependencies");
+    logError(`Package manager command failed: ${error.message}`);
+    logWarning(
+      "Skipping dependency installation. You may need to install dependencies manually later."
     );
     return false;
   }
