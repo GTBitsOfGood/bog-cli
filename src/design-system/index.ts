@@ -1,9 +1,8 @@
 import { Command } from "commander";
 import { init } from "./commands/init.js";
-import { add } from "./commands/add.js";
+import { edit } from "./commands/edit.js";
 
-
-export const designSystem = new Command("design-system")
-    .description("Commands related to the Bits of Good Design System")
-    .addCommand(init)
-    .addCommand(add);
+export const designSystem = new Command("design")
+  .description("Commands related to the Bits of Good Design System")
+  .addCommand(init)
+  .addCommand(edit);
