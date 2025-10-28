@@ -23,6 +23,17 @@ export const COMPONENTS = [
   "switch",
   "text-input",
   "dropdown",
+  "banner",
+  "card",
+  "chip",
+  "date-picker",
+  "modal",
+  "popover",
+  "progress",
+  "table",
+  "tabs",
+  "toast",
+  "tooltip"
 ];
 export const BASE_URL =
   "https://raw.githubusercontent.com/GTBitsOfGood/design-system";
