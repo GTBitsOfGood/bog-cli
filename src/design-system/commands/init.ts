@@ -137,7 +137,6 @@ async function setupUtils(root: string): Promise<boolean> {
     try {
       await mkdir(destDir, { recursive: true });
 
-      async function recursiveDownload(repoPath: string, destDir: string) {
     async function recursiveDownload(repoPath: string, destDir: string) {
       const response = await fetch(
         `${API_BASE_URL}/${repoPath}?ref=main`
