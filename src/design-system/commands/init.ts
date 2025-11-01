@@ -138,33 +138,41 @@ async function setupUtils(root: string): Promise<boolean> {
       await mkdir(destDir, { recursive: true });
 
       async function recursiveDownload(repoPath: string, destDir: string) {
-        const response = await fetch(
-          `${API_BASE_URL}/${repoPath}?ref=main`
+    async function recursiveDownload(repoPath: string, destDir: string) {
+      const response = await fetch(
+        `${API_BASE_URL}/${repoPath}?ref=main`
+      );
+      
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch directory contents: ${repoPath}, status: ${response.status}`
         );
-        const files = (await response.json()) as Array<{
-            type: "file" | "dir";
-            name: string;
-            path: string;
-            download_url: string;
-          }>;
-
-          for (const file of files) {
-            if (file.type === "dir") {
-              const subDir = path.join(destDir, file.name);
-              await mkdir(subDir, { recursive: true });
-              await recursiveDownload(file.path, subDir);
-            } else if (file.type === "file") {
-              const fileResponse = await fetch(file.download_url);
-              if (!fileResponse.ok) {
-                throw new Error(
-                  `ERROR: Failed to download file: ${file.name}, status: ${fileResponse.status}`
-                );
-              }
-              const fileData = await fileResponse.text();
-              await writeFile(path.join(destDir, file.name), fileData, "utf8");
-            }
-          }
       }
+      
+      const files = (await response.json()) as Array<{
+          type: "file" | "dir";
+          name: string;
+          path: string;
+          download_url: string;
+        }>;
+
+        for (const file of files) {
+          if (file.type === "dir") {
+            const subDir = path.join(destDir, file.name);
+            await mkdir(subDir, { recursive: true });
+            await recursiveDownload(file.path, subDir);
+          } else if (file.type === "file") {
+            const fileResponse = await fetch(file.download_url);
+            if (!fileResponse.ok) {
+              throw new Error(
+                `ERROR: Failed to download file: ${file.name}, status: ${fileResponse.status}`
+              );
+            }
+            const fileData = await fileResponse.text();
+            await writeFile(path.join(destDir, file.name), fileData, "utf8");
+          }
+        }
+    }
       await recursiveDownload(`/src/utils/design-system`, destDir);
       spinner.succeed("design system utility functions downloaded!");
       logInfo(`Utilities downloaded at: ${path.relative(root, destDir)}`);
