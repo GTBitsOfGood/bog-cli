@@ -14,7 +14,7 @@ import {
   findGitRoot,
 } from "../../utils.js";
 import { createBogConfig } from "../../config-utils.js";
-import { CONFIG_FILE_NAME } from "../../config.js";
+import { API_BASE_URL, CONFIG_FILE_NAME } from "../../config.js";
 import {
   DEV_DEPENDENCIES,
   DEPENDENCIES,
@@ -101,6 +101,89 @@ export default config;
   }
 
   return setupTailwind;
+}
+
+async function setupUtils(root: string): Promise<boolean> {
+  const { setupUtils } = await prompts({
+    name: "setupUtils",
+    type: "confirm",
+    message: "Do you want to download the design system utility functions? (RECOMMENDED)",
+    initial: true,
+  });
+
+  if (!setupUtils) {
+    logWarning(
+      "Utils not installed. This may cause runtime errors with certain components."
+    );
+    return false;
+  }
+
+    const { utilsPath } = await prompts({
+    name: "utilsPath",
+    type: "text",
+    message: "Input the path where utilities should be installed",
+    initial: "src/utils/design-system",
+  });
+
+  if (!utilsPath) {
+    logInfo("\nOperation cancelled.");
+    return false;
+  }
+
+  if (setupUtils) {
+    const spinner = ora("downloading design system utility functions...").start();
+    const destDir = path.join(root, utilsPath);
+
+    try {
+      await mkdir(destDir, { recursive: true });
+
+    async function recursiveDownload(repoPath: string, destDir: string) {
+      const response = await fetch(
+        `${API_BASE_URL}/${repoPath}?ref=main`
+      );
+      
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch directory contents: ${repoPath}, status: ${response.status}`
+        );
+      }
+      
+      const files = (await response.json()) as Array<{
+          type: "file" | "dir";
+          name: string;
+          path: string;
+          download_url: string;
+        }>;
+
+        for (const file of files) {
+          if (file.type === "dir") {
+            const subDir = path.join(destDir, file.name);
+            await mkdir(subDir, { recursive: true });
+            await recursiveDownload(file.path, subDir);
+          } else if (file.type === "file") {
+            const fileResponse = await fetch(file.download_url);
+            if (!fileResponse.ok) {
+              throw new Error(
+                `ERROR: Failed to download file: ${file.name}, status: ${fileResponse.status}`
+              );
+            }
+            const fileData = await fileResponse.text();
+            await writeFile(path.join(destDir, file.name), fileData, "utf8");
+          }
+        }
+    }
+      await recursiveDownload(`/src/utils/design-system`, destDir);
+      spinner.succeed("design system utility functions downloaded!");
+      logInfo(`Utilities downloaded at: ${path.relative(root, destDir)}`);
+    } catch (error: any) {
+      spinner.fail("Failed to download design system utility functions");
+      logError(error?.message ?? String(error));
+      return false;
+    }
+      
+  }
+
+  return setupUtils;
 }
 
 //Setup Bits of Good sunset theme global css
@@ -292,6 +375,7 @@ function displayDiff(files: string[]): void {
 function displaySetupSummary(
   dependenciesInstalled: boolean,
   tailwindSetup: boolean,
+  utilsSetup: boolean,
   stylesSetup: boolean,
   fontsSetup: boolean,
   createdFiles: string[] = []
@@ -317,6 +401,10 @@ function displaySetupSummary(
   logColored(
     formatRow("Tailwind v4:", tailwindSetup),
     statusColor(tailwindSetup)
+  );
+  logColored(
+    formatRow("Utils:", utilsSetup),
+    statusColor(utilsSetup)
   );
   logColored(formatRow("Theme CSS:", stylesSetup), statusColor(stylesSetup));
   logColored(formatRow("Fonts:", fontsSetup), statusColor(fontsSetup));
@@ -416,6 +504,9 @@ export const init = new Command()
       // Setup Tailwind v4
       const tailwindSetup = await setupTailwind(root);
 
+      // Setup utility functions
+      const utilsSetup = await setupUtils(root);
+
       // Setup theme stylesheet
       const stylesSetup = await setupStyles(root, tailwindSetup);
 
@@ -443,6 +534,9 @@ export const init = new Command()
       if (tailwindSetup) {
         createdFiles.push("postcss.config.mjs");
       }
+      if (utilsSetup) {
+        createdFiles.push("src/utils/design-system/");
+      }
       if (stylesSetup) {
         // We don't know the exact path, but we can mention it
         createdFiles.push("src/styles/globals.css");
@@ -451,10 +545,12 @@ export const init = new Command()
         createdFiles.push("public/fonts/");
       }
 
+
       // Display summary
       displaySetupSummary(
         dependenciesInstalled,
         tailwindSetup,
+        utilsSetup,
         stylesSetup,
         fontsSetup,
         createdFiles
