@@ -6,6 +6,7 @@ export const DEPENDENCIES = [
   "@radix-ui/themes",
   "@phosphor-icons/react",
   "radix-ui",
+  "react-use"
 ];
 export const FONTS = [
   "visbyextrabold-webfont.woff2",
@@ -37,6 +38,9 @@ export const COMPONENTS = [
 ];
 export const BASE_URL =
   "https://raw.githubusercontent.com/GTBitsOfGood/design-system";
+
+export const API_BASE_URL =
+  "https://api.github.com/repos/GTBitsOfGood/design-system/contents";
 
 // Configuration constants
 export const CONFIG_FILE_NAME = "bog.json";
