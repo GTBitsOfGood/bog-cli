@@ -223,6 +223,7 @@ async function setupStyles(
     `${BASE_URL}/refs/heads/main/src/styles/globals.css`
   );
   const styles = await response.text();
+  let updatedStyles = styles;
 
   await mkdir(path.dirname(path.join(root, stylePath)), {
     recursive: true,
@@ -245,7 +246,116 @@ async function setupStyles(
     }
   }
 
-  await writeFile(path.join(root, stylePath), styles, "utf8");
+  // Offer theme customization only when we will proceed with writing the stylesheet
+  const { customizeTheme } = await prompts({
+    name: "customizeTheme",
+    type: "confirm",
+    message: "Do you want to customize the theme colors in globals.css?",
+    initial: true,
+  });
+
+  const isValidHex = (hex: string | undefined): boolean =>
+    !!hex && /^[0-9a-fA-F]{6}$/.test(hex);
+
+  if (customizeTheme) {
+    const defaults = {
+      brand: "fc5b43",
+      text: "22070b",
+      info: "325ce8",
+      warning: "8f6c1a",
+      success: "0a7b40",
+      error: "c73a3a",
+    } as const;
+
+    const responses = await prompts([
+      {
+        name: "brand",
+        type: "text",
+        message:
+          "Input 6 hex characters for your brand color. Do not include a '#'",
+        initial: defaults.brand,
+        validate: (val: string) =>
+          isValidHex(val) || "Enter exactly 6 hex characters (no '#')",
+      },
+      {
+        name: "text",
+        type: "text",
+        message:
+          "Input 6 hex characters for your text color. Do not include a '#'",
+        initial: defaults.text,
+        validate: (val: string) =>
+          isValidHex(val) || "Enter exactly 6 hex characters (no '#')",
+      },
+      {
+        name: "info",
+        type: "text",
+        message:
+          "Input 6 hex characters for informational color. Do not include a '#'",
+        initial: defaults.info,
+        validate: (val: string) =>
+          isValidHex(val) || "Enter exactly 6 hex characters (no '#')",
+      },
+      {
+        name: "warning",
+        type: "text",
+        message:
+          "Input 6 hex characters for warning color. Do not include a '#'",
+        initial: defaults.warning,
+        validate: (val: string) =>
+          isValidHex(val) || "Enter exactly 6 hex characters (no '#')",
+      },
+      {
+        name: "success",
+        type: "text",
+        message:
+          "Input 6 hex characters for success color. Do not include a '#'",
+        initial: defaults.success,
+        validate: (val: string) =>
+          isValidHex(val) || "Enter exactly 6 hex characters (no '#')",
+      },
+      {
+        name: "error",
+        type: "text",
+        message:
+          "Input 6 hex characters for error color. Do not include a '#'",
+        initial: defaults.error,
+        validate: (val: string) =>
+          isValidHex(val) || "Enter exactly 6 hex characters (no '#')",
+      },
+    ]);
+
+    if (
+      responses &&
+      isValidHex(responses.brand) &&
+      isValidHex(responses.text) &&
+      isValidHex(responses.info) &&
+      isValidHex(responses.warning) &&
+      isValidHex(responses.success) &&
+      isValidHex(responses.error)
+    ) {
+      const replacements: Array<{ from: string; to: string }> = [
+        { from: defaults.brand, to: responses.brand },
+        { from: defaults.text, to: responses.text },
+        { from: defaults.info, to: responses.info },
+        { from: defaults.warning, to: responses.warning },
+        { from: defaults.success, to: responses.success },
+        { from: defaults.error, to: responses.error },
+      ];
+
+      for (const { from, to } of replacements) {
+        const regex = new RegExp(from, "gi");
+        updatedStyles = updatedStyles.replace(regex, to);
+      }
+
+      logInfo("Customized theme colors in globals.css.");
+    } else {
+      logWarning(
+        "Theme customization skipped or invalid input provided; using default colors."
+      );
+    }
+  }
+
+  await writeFile(path.join(root, stylePath), updatedStyles, "utf8");
   logInfo("Bits of Good theme and tailwindcss stylesheet created.");
   logInfo(
     "Make sure to import it into your src/app/layout.tsx or src/pages/_app.tsx"
