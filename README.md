@@ -2,11 +2,15 @@
 
 This is the repository for Bits of Good's internal CLI used to manage integrations with internal tools to our applications.
 
-## Local Setup
+## Setup
+
+If you want to use this CLI in your project, run `npm i bog-cli`. You can then access all of the commands below prefixed with `npx bog` (for example, `npx bog design init`)
+
+## Dev Setup
 
 After cloning this repository locally, install the necessary packages using `npm i`. This sets up the project locally, but to run commands, follow the steps below.
 
-## Running/Testing Commands Locally
+### Running/Testing Commands Using a Local Build
 
 To run commands based on your local code, run the following commands:
 

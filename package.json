@@ -4,14 +4,26 @@
     "bog": "./dist/index.js"
   },
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "CLI for interacting with Bits of Good internal tools",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "tsc -w",
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
     "link": "(npm unlink -g bog || true) && npm link"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "cli",
+    "bits-of-good"
+  ],
+  "author": "GT Bits of Good",
   "license": "ISC",
   "type": "module",
   "devDependencies": {
@@ -30,5 +42,8 @@
     "ora": "^8.2.0",
     "prompts": "^2.4.2",
     "radix-ui": "^1.4.3"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
