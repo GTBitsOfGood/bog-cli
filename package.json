@@ -3,7 +3,7 @@
   "bin": {
     "bog": "./dist/index.js"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI for interacting with Bits of Good internal tools",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
